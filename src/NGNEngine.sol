@@ -27,6 +27,7 @@ pragma solidity 0.8.19;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 import "./NGNcoin.sol";
 
@@ -60,14 +61,23 @@ contract NGNEngine is ReentrancyGuard {
     error NGNEngine__TokenAddressesAndPriceFeedAddressMustBeSameLength();
     error NGNEngine__NotAllowedToken();
     error NGNEngine__TransferFailed();
+    error NGNEngine__BreaksHealthFactor(uint256 healthFactor);
 
     /**
      *
      *    State Variables
      *
      */
+    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
+    uint256 private constant PRECISION = 1e18;
+    uint256 private constant LIQUIDATION_THRESHOLD = 50;
+    uint256 private constant LIQUIDATION_PRECISION = 100;
+    uint256 private constant MIN_HEALTH_FACTOR = 1;
+
     mapping(address token => address priceFeed) private s_priceFeeds;
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
+    mapping (address user => uint256 amountNGNcoinMinted) private s_NGNcoinMinted;
+    address [] private s_collateralTokens;
 
     NGNCoin private immutable i_ngncoin;
 
@@ -113,6 +123,7 @@ contract NGNEngine is ReentrancyGuard {
 
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
             s_priceFeeds[tokenAddresses[i]] = priceFeedAddresses[i];
+            s_collateralTokens.push(tokenAddresses[i]);
         }
 
         i_ngncoin = NGNCoin(ngncAddress);
@@ -150,11 +161,82 @@ contract NGNEngine is ReentrancyGuard {
 
     function redeemCollateral() external {}
 
-    function mintNGNC() external {}
+    /*
+     * @notice follows CEI (Checks, Effects interactions)
+     * @param amountNGNcoinToMint the amount of NGNcoin to mint
+     * @notice they must have more collateral value than the minimum threshold
+     */
+    function mintNGNC(uint256 amountNGNcoinToMint) external moreThanZero(amountNGNcoinToMint) nonReentrant {
+        s_NGNcoinMinted[msg.sender] += amountNGNcoinToMint;
+
+        _revertIfHealthFactorIsBroken(msg.sender);
+    }
 
     function burnNGNc() external {}
 
     function liquidate() external {}
 
     function getHealthFactor() external {}
+
+    /**
+     *
+     *    private & internal Functions
+     *
+     */
+
+    function _getAccountInformation(address user) private view returns(uint256 totlaNGNCoinMinted, uint256 collaterlValueInUsd) {
+        totlaNGNCoinMinted = s_NGNcoinMinted[user];
+        collaterlValueInUsd = getAccountCollateralValue(user);
+
+    }
+
+
+    /**
+     * Returns how close to liquidation a user is 
+     * If a user goes below 1, then they get liquidated
+     */
+    function _healthFactor(address user) private view returns (uint256) {
+        (uint256 totlaNGNCoinMinted, uint256 collaterlValueInUsd) = _getAccountInformation(user);
+
+        uint256 collateralAdjustedForThreshold = (collaterlValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
+
+        return (collateralAdjustedForThreshold * PRECISION) / totlaNGNCoinMinted;
+    }
+
+    // 1. Check health factor (do they have enough collateral?)
+    // 2. Revert if they don't
+    function _revertIfHealthFactorIsBroken(address user) internal view {
+        uint256 userHealthFactor = _healthFactor(user);
+        if(userHealthFactor < MIN_HEALTH_FACTOR){
+            revert NGNEngine__BreaksHealthFactor(userHealthFactor);
+        }
+    }
+
+
+    /**
+     *
+     *    public & External Functions
+     *
+     */
+
+    function getAccountCollateralValue(address user) public view returns(uint256 totalCollateralValueInNGN) {
+        // Loop through each collateral token, get the amount they have deposited, and map it to 
+        // the price, to get usd value
+        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
+            address token = s_collateralTokens[i];
+            uint256 amount = s_collateralDeposited[user][token];
+            totalCollateralValueInNGN +=getNGNValue(token, amount);
+        }
+
+        return totalCollateralValueInNGN;
+    }
+
+
+    function getNGNValue(address token, uint256 amount) public view returns(uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
+        (,int256 price,,,) = priceFeed.latestRoundData();
+
+        return ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
+    }
+
 }
