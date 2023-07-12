@@ -12,7 +12,7 @@ contract DeployNGNC is Script {
   address [] tokenAddresses;
   address [] priceFeedAddresses;
 
-  function run () external returns(NGNCoin, NGNEngine) {
+  function run () external returns(NGNCoin, NGNEngine, HelperConfig) {
 
     HelperConfig config = new HelperConfig();
 
@@ -33,6 +33,6 @@ contract DeployNGNC is Script {
     NGNC.transferOwnership(address(engine));
     vm.stopBroadcast();
 
-    return (NGNC, engine);
+    return (NGNC, engine, config);
   }
 }
