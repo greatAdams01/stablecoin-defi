@@ -28,7 +28,6 @@ pragma solidity 0.8.19;
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-
 /*
  * @title NGN stablecoin
  * @author Great Adams
@@ -41,44 +40,36 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  */
 
 contract NGNCoin is ERC20Burnable, Ownable {
+    error NGNCoin_MustBeMoreThanZero();
+    error NGNCoin_BurnAmountExceedsBalance();
+    error NGNCoin_NotZeroAddress();
 
-  error NGNCoin_MustBeMoreThanZero();
-  error NGNCoin_BurnAmountExceedsBalance();
-  error NGNCoin_NotZeroAddress();
+    constructor() ERC20("Naira coin", "NGNC") {}
 
-  constructor()ERC20("Naira coin",  "NGNC") {
+    function burn(uint256 _amount) public override onlyOwner {
+        uint256 balance = balanceOf(msg.sender);
+        if (_amount <= 0) {
+            revert NGNCoin_MustBeMoreThanZero();
+        }
 
-  }
+        if (balance < _amount) {
+            revert NGNCoin_BurnAmountExceedsBalance();
+        }
 
-
-  function burn(uint256 _amount) public override onlyOwner {
-    uint256 balance = balanceOf(msg.sender);
-    if(_amount <=0) {
-      revert NGNCoin_MustBeMoreThanZero();
+        super.burn(_amount);
     }
 
-    if(balance < _amount) {
-      revert NGNCoin_BurnAmountExceedsBalance();
+    function mint(address _to, uint256 _amount) external onlyOwner returns (bool) {
+        if (_to == address(0)) {
+            revert NGNCoin_NotZeroAddress();
+        }
+
+        if (_amount <= 0) {
+            revert NGNCoin_MustBeMoreThanZero();
+        }
+
+        _mint(_to, _amount);
+
+        return true;
     }
-
-    super.burn(_amount);
-  }
-
-
-  function mint (address _to, uint256 _amount) external onlyOwner returns(bool) {
-    if(_to == address(0)){
-      revert NGNCoin_NotZeroAddress();
-    }
-
-    if(_amount <= 0) {
-      revert NGNCoin_MustBeMoreThanZero();
-    }
-
-    _mint(_to, _amount);
-
-    return true;
-  }
-
-
-
 }
