@@ -62,6 +62,7 @@ contract NGNEngine is ReentrancyGuard {
     error NGNEngine__NotAllowedToken();
     error NGNEngine__TransferFailed();
     error NGNEngine__BreaksHealthFactor(uint256 healthFactor);
+    error NGNEngine__MintFailed();
 
     /**
      *
@@ -168,8 +169,14 @@ contract NGNEngine is ReentrancyGuard {
      */
     function mintNGNC(uint256 amountNGNcoinToMint) external moreThanZero(amountNGNcoinToMint) nonReentrant {
         s_NGNcoinMinted[msg.sender] += amountNGNcoinToMint;
-
+        // Don't let them mint too much 
         _revertIfHealthFactorIsBroken(msg.sender);
+
+        bool minted = i_ngncoin.mint(msg.sender, amountNGNcoinToMint);
+
+        if (!minted) {
+            revert NGNEngine__MintFailed();
+        }
     }
 
     function burnNGNc() external {}
